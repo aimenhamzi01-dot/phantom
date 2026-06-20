@@ -3,6 +3,12 @@ from datetime import datetime, timezone
 from models.schemas import ScanResult, ReconResult, Vulnerability, BountyEstimate, RecommendedProgram
 logger = logging.getLogger("phantom.report")
 
+def parse_cwe(cwe_raw):
+    if not cwe_raw: return None
+    if isinstance(cwe_raw, list):
+        return cwe_raw[0] if cwe_raw else None
+    return str(cwe_raw)
+
 class ReportEngine:
     def build(self, target, target_type, recon, ai_result):
         vulns = []
@@ -18,7 +24,7 @@ class ReportEngine:
                     endpoint=v.get("endpoint"),
                     impact=v.get("impact",""),
                     attack_vector=v.get("attack_vector",""),
-                    cwe=v.get("cwe"),
+                    cwe=parse_cwe(v.get("cwe")),
                     cve_refs=v.get("cve_refs",[]),
                 ))
             except Exception as e:
@@ -70,28 +76,17 @@ Target  : {result.target}
 Risk    : {result.risk_rating}
 Time    : {result.timestamp}
 {sep}
-
 EXECUTIVE SUMMARY
 {result.executive_summary}
-
 VULNERABILITIES ({len(result.vulnerabilities)})
 {"".join([f'''
 [{v.id}] {v.title} | {v.severity.upper()} | CVSS {v.cvss_score}
 Endpoint: {v.endpoint or "Multiple"}
 Impact  : {v.impact}
 ''' for v in result.vulnerabilities])}
-
-TECHNICAL DETAILS
-{result.technical_details}
-
 PROOF OF CONCEPT
 {result.proof_of_concept}
-
 REMEDIATION
 {result.remediation}
-
-SUBMISSION GUIDE
-{result.submission_guide}
-
 ESTIMATED BOUNTY: ${result.estimated_bounty.most_likely:,}
 {sep}"""

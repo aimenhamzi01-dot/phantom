@@ -6,6 +6,7 @@ class TargetType(str, Enum):
     web = "web"
     mobile = "mobile"
     hardware = "hardware"
+    code = "code"
 
 class ScanRequest(BaseModel):
     target: str
@@ -35,6 +36,9 @@ class ReconResult(BaseModel):
     endpoints: List[str] = []
     status_code: Optional[int] = None
     ssl_info: dict = {}
+    source_fetched: bool = False
+    lines_of_code: int = 0
+    static_findings: List[dict] = []
 
 class Vulnerability(BaseModel):
     id: str
@@ -48,6 +52,9 @@ class Vulnerability(BaseModel):
     attack_vector: str
     cwe: Optional[str] = None
     cve_refs: List[str] = []
+    verified: bool = False
+    source_line: Optional[int] = None
+    source_snippet: Optional[str] = None
 
 class BountyEstimate(BaseModel):
     low: int

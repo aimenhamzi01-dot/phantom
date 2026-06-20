@@ -2,12 +2,14 @@ import asyncio, socket, ssl, httpx, dns.resolver
 from urllib.parse import urlparse
 from config import config
 from models.schemas import ReconResult
+from engines.static_analysis import StaticAnalysisEngine
 import logging
 logger = logging.getLogger("phantom.recon")
 
 class ReconEngine:
     def __init__(self):
         self.http = httpx.AsyncClient(timeout=config.HTTP_TIMEOUT, follow_redirects=True, verify=False, headers={"User-Agent": "Mozilla/5.0 (Security-Researcher/PHANTOM)"})
+        self.static_engine = StaticAnalysisEngine()
 
     async def run(self, target: str, target_type: str) -> ReconResult:
         result = ReconResult()
@@ -27,7 +29,23 @@ class ReconEngine:
         elif target_type == "hardware":
             result.domain = target
             result.technologies = ["Embedded System", "Firmware"]
+        elif target_type == "code":
+            result.domain = target
+            await self._analyze_source(target, result)
         return result
+
+    async def _analyze_source(self, url, result):
+        try:
+            analysis = await self.static_engine.analyze(url)
+            result.source_fetched = analysis["fetched"]
+            result.lines_of_code = analysis["loc"]
+            result.static_findings = analysis["findings"]
+            if not analysis["fetched"]:
+                logger.warning(f"Could not fetch source for {url}: {analysis['error']}")
+            else:
+                logger.info(f"Fetched {analysis['loc']} LOC, semgrep found {len(analysis['findings'])} raw findings")
+        except Exception as e:
+            logger.error(f"Static analysis failed for {url}: {e}")
 
     async def _probe_http(self, url, result):
         try:
@@ -97,3 +115,4 @@ class ReconEngine:
 
     async def close(self):
         await self.http.aclose()
+        await self.static_engine.close()
