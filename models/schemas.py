@@ -51,6 +51,11 @@ class ReconResult(BaseModel):
     source_fetched: bool = False
     lines_of_code: int = 0
     static_findings: List[dict] = []
+    analysis_status: str = "not-run"
+    analysis_engine: Optional[str] = None
+    analysis_config: Optional[str] = None
+    source_sha256: Optional[str] = None
+    source_bytes: int = 0
 
 
 class Vulnerability(BaseModel):

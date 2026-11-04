@@ -3,6 +3,7 @@ PHANTOM — Static Analysis Engine
 Fetches authorized source over pinned HTTPS and runs Semgrep against inert text.
 """
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -56,20 +57,31 @@ class StaticAnalysisEngine:
     async def analyze(self, url: str, resolved_ips: list[str]) -> dict:
         source = await self.fetch_source(url, resolved_ips)
         if source is None:
-            return {"fetched": False, "loc": 0, "findings": [], "error": "Could not fetch source"}
+            return {
+                "fetched": False, "loc": 0, "findings": [],
+                "error": "Could not fetch source", "status": "source-unavailable",
+                "engine": "semgrep", "config": None, "source_sha256": None, "source_bytes": 0,
+            }
         filename = os.path.basename(urlsplit(url).path) or "source.txt"
         if filename in {".", ".."}:
             filename = "source.txt"
         config = self._pick_config(filename)
         loc = len(source.splitlines())
+        source_bytes = len(source.encode("utf-8"))
+        source_sha256 = hashlib.sha256(source.encode("utf-8")).hexdigest()
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, filename)
             with open(filepath, "w", encoding="utf-8", errors="replace") as f:
                 f.write(source)
-            findings = await self._run_semgrep(filepath, config)
-        return {"fetched": True, "loc": loc, "findings": findings, "error": None}
+            findings, status = await self._run_semgrep(filepath, config)
+        return {
+            "fetched": True, "loc": loc, "findings": findings,
+            "error": None if status == "complete" else status, "status": status,
+            "engine": "semgrep", "config": config,
+            "source_sha256": source_sha256, "source_bytes": source_bytes,
+        }
 
-    async def _run_semgrep(self, filepath: str, config: str) -> list:
+    async def _run_semgrep(self, filepath: str, config: str) -> tuple[list, str]:
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -79,7 +91,7 @@ class StaticAnalysisEngine:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=90)
             if not stdout:
                 logger.warning("Semgrep produced no output: %s", stderr.decode(errors="replace")[:300])
-                return []
+                return [], "semgrep-empty"
             data = json.loads(stdout)
             results = []
             for item in data.get("results", []):
@@ -94,16 +106,16 @@ class StaticAnalysisEngine:
                     "owasp": item.get("extra", {}).get("metadata", {}).get("owasp"),
                     "confidence": item.get("extra", {}).get("metadata", {}).get("confidence"),
                 })
-            return results
+            return results, "complete"
         except FileNotFoundError:
             logger.error("semgrep is not installed. Run: pip install semgrep")
-            return []
+            return [], "semgrep-unavailable"
         except asyncio.TimeoutError:
             logger.warning("Semgrep timed out")
             if proc is not None and proc.returncode is None:
                 proc.kill()
                 await proc.wait()
-            return []
+            return [], "semgrep-timeout"
         except asyncio.CancelledError:
             if proc is not None and proc.returncode is None:
                 proc.kill()
@@ -111,7 +123,7 @@ class StaticAnalysisEngine:
             raise
         except json.JSONDecodeError as exc:
             logger.warning("Semgrep JSON parse error: %s", exc)
-            return []
+            return [], "semgrep-invalid-output"
 
     async def close(self):
         return None

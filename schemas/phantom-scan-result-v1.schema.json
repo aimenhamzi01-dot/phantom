@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aimenhamzi01-dot/phantom/blob/main/schemas/phantom-scan-result-v1.schema.json",
+  "title": "Phantom evidence result",
+  "type": "object",
+  "required": ["target", "target_type", "scan_id", "timestamp", "recon", "vulnerabilities"],
+  "properties": {
+    "target": {"type": "string", "minLength": 1, "maxLength": 512},
+    "target_type": {"enum": ["web", "code", "mobile", "hardware"]},
+    "scan_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "recon": {
+      "type": "object",
+      "properties": {
+        "analysis_status": {"type": "string"},
+        "analysis_engine": {"type": ["string", "null"]},
+        "analysis_config": {"type": ["string", "null"]},
+        "source_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "source_bytes": {"type": "integer", "minimum": 0, "maximum": 2000000},
+        "lines_of_code": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "vulnerabilities": {"type": "array", "maxItems": 25, "items": {"type": "object"}},
+    "tech_stack": {"type": "array", "items": {"type": "string"}},
+    "executive_summary": {"type": "string"},
+    "technical_details": {"type": "string"},
+    "proof_of_concept": {"type": "string"},
+    "remediation": {"type": "string"},
+    "risk_rating": {"type": "string"}
+  },
+  "additionalProperties": true
+}

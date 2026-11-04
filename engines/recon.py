@@ -46,6 +46,11 @@ class ReconEngine:
             result.source_fetched = analysis["fetched"]
             result.lines_of_code = analysis["loc"]
             result.static_findings = analysis["findings"]
+            result.analysis_status = analysis.get("status", "unknown")
+            result.analysis_engine = analysis.get("engine")
+            result.analysis_config = analysis.get("config")
+            result.source_sha256 = analysis.get("source_sha256")
+            result.source_bytes = analysis.get("source_bytes", 0)
             if not analysis["fetched"]:
                 logger.warning("Could not fetch source for %s: %s", url, analysis["error"])
             else:
