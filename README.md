@@ -1,144 +1,105 @@
-# 👻 PHANTOM — AI Bug Bounty Hunter
+# PHANTOM
 
-> Elite AI-powered security analysis engine for professional bug bounty hunters.  
-> Built on Claude AI + real reconnaissance data for maximum accuracy.
+**An experimental security-assessment assistant for explicitly authorized research.**
 
----
+PHANTOM combines limited reconnaissance, optional source retrieval and Semgrep checks, and an AI-generated report. It is a research prototype—not a verified vulnerability scanner, bounty oracle, or production service. Findings, severity, CVSS values, remediation, and bounty estimates require independent human review.
 
-## ⚡ Features
+> **Security status:** Do not expose this service to the public internet or accept scan requests from untrusted users. The current API has no authentication or authorization, does not enforce the submitted scope, and has insufficient controls against requests to unintended network destinations. See [Security limitations](#security-limitations) before running it.
 
-- 🌐 **Web App Analysis** — HTTP headers, DNS, SSL, subdomains, endpoints
-- 📱 **Mobile App Analysis** — APK/IPA metadata, permission analysis
-- 🔧 **Hardware/Firmware Analysis** — Binary analysis, architecture detection
-- 🧠 **AI-Powered** — Claude analyzes real recon data, not generic assumptions
-- 📊 **CVSS Scoring** — Accurate scores based on actual attack vectors
-- 💰 **Bounty Estimation** — Program matching with reward ranges
-- 📄 **Professional Reports** — Court-ready, submission-ready format
-- 🔍 **Shodan Integration** — Real port/service/CVE data (optional)
-- 🛡️ **VirusTotal Integration** — Domain reputation (optional)
+## What is implemented
 
----
+- **Web target reconnaissance:** makes an HTTP request, follows redirects, collects selected DNS records and certificate details, and checks a short list of common subdomains. Optional Shodan and VirusTotal lookups are available when their keys are configured.
+- **Code target analysis:** fetches source from a URL and, if the Semgrep CLI is installed, runs a language-appropriate Semgrep ruleset. This is remote source retrieval, not an upload workflow for local files. Semgrep rules may require network access.
+- **AI-assisted reporting:** the current `AIEngine` calls the OpenAI-compatible GitHub Models endpoint with `gpt-4o`. Its output is generated text and may be incorrect; it is not independent verification.
+- **Mobile and hardware target types:** accepted by the API, but currently return placeholder metadata. The repository does not implement APK/IPA or firmware/binary analysis.
+- **In-memory job tracking:** scan state and results are held in process memory and are lost on restart. This is suitable only for local experimentation.
 
-## 🚀 Quick Start
+PHANTOM does not execute proof-of-concept code or apply remediation. A `scope` value is sent to the model as context; it is **not** an enforcement boundary and does not restrict network requests.
 
-### Option A — Local (3 commands)
+## Requirements and current setup caveats
+
+- Python 3.11 or later.
+- A GitHub credential accepted by the configured GitHub Models endpoint (`GITHUB_TOKEN`).
+- The current code also checks for `ANTHROPIC_API_KEY` before starting a scan, although the present AI client uses GitHub Models rather than Anthropic. This mismatch is a known setup issue; an Anthropic key does not replace `GITHUB_TOKEN` for the current model client.
+- The code imports the `openai` Python package, but it is not listed in `requirements.txt` at this revision. Install it separately until the dependency manifest is corrected.
+- For `target_type: "code"`, install the Semgrep CLI separately. Without it, source may be fetched but no Semgrep findings will be produced.
+
+Never use credentials from old commits. Use new, least-privilege credentials and keep them in a local `.env` file that is not committed.
+
+## Local quick start
+
+Use an isolated development environment and targets you own or are explicitly authorized to assess.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/phantom.git
+git clone https://github.com/aimenhamzi01-dot/phantom.git
 cd phantom
-cp .env.example .env        # Add your ANTHROPIC_API_KEY
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+pip install openai
+cp .env.example .env
+```
+
+Edit `.env` locally. Set `GITHUB_TOKEN` for the current model client and, because of the current validation mismatch, also set `ANTHROPIC_API_KEY` before starting a scan. Add Shodan or VirusTotal keys only if you need those integrations. Do not paste real credentials into issues, pull requests, or public logs.
+
+The example environment binds the Python server to loopback. Start it from the project directory:
+
+```bash
 python main.py
 ```
 
-Open: http://localhost:8000
+Check `http://127.0.0.1:8000/health` and open the FastAPI schema at `http://127.0.0.1:8000/docs`. The repository currently provides an API; it does not include a bundled web frontend.
 
-### Option B — Docker (1 command)
+The Docker files are provided for experimentation, not secure public deployment. In particular, the current Compose port mapping and container host setting can expose the service beyond loopback.
 
-```bash
-git clone https://github.com/YOUR_USERNAME/phantom.git
-cd phantom
-cp .env.example .env        # Add your ANTHROPIC_API_KEY
-docker-compose up
+## API overview
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/health` | Basic service and configured-integration status |
+| `POST` | `/scan/start` | Start an asynchronous scan |
+| `GET` | `/scan/{scan_id}/status` | Read in-memory job status |
+| `GET` | `/scan/{scan_id}/result` | Read the completed JSON result |
+| `GET` | `/scan/{scan_id}/report` | Export a plain-text report |
+| `DELETE` | `/scan/{scan_id}` | Remove a scan from the current process memory |
+| `GET` | `/scans` | List scan summaries held by the current process |
+| `GET` | `/docs` | Interactive OpenAPI documentation |
+
+Example request shape (replace the placeholder only with a target you are authorized to assess):
+
+```json
+{
+  "target": "AUTHORIZED_TARGET_HERE",
+  "target_type": "web",
+  "scope": ["XSS", "SQLi", "SSRF"]
+}
 ```
 
----
+Submit it to `POST /scan/start` as JSON. The API returns a scan ID that can be used with the status and result routes. The service performs network activity when a web or code scan is started; do not test the example placeholder as a real target.
 
-## 🔑 API Keys
+Supported `target_type` values are `web`, `code`, `mobile`, and `hardware`. Only `web` and the limited remote-source `code` path currently perform the corresponding collection described above; `mobile` and `hardware` remain placeholders.
 
-| Key | Required | Where to get |
-|-----|----------|-------------|
-| `ANTHROPIC_API_KEY` | ✅ Yes | [console.anthropic.com](https://console.anthropic.com) |
-| `SHODAN_API_KEY` | Optional | [account.shodan.io](https://account.shodan.io) |
-| `VIRUSTOTAL_API_KEY` | Optional | [virustotal.com](https://www.virustotal.com/gui/my-apikey) |
+## Security limitations
 
----
+The current implementation is not suitable for multi-user or internet-facing deployment:
 
-## 📁 Project Structure
+- Scan, status, result, delete, and listing endpoints have no authentication or role checks.
+- The submitted scope is descriptive input, not an authorization check or target allowlist.
+- Web and code targets can cause outbound requests. The HTTP client follows redirects and currently disables TLS certificate verification for its requests. Private, internal, or otherwise unintended destinations are not blocked.
+- CORS configuration is permissive and is not an access-control mechanism.
+- There are no durable storage, per-user isolation, rate limits, quotas, or robust concurrency controls.
+- The AI report can contain fabricated or overstated claims. Treat all findings and model-provided values as unverified until checked independently.
 
-```
-phantom/
-├── main.py                  # FastAPI server + scan orchestration
-├── config.py                # Environment & settings
-├── requirements.txt         # Python dependencies
-├── Dockerfile               # Container build
-├── docker-compose.yml       # Full stack deployment
-├── .env.example             # Environment template
-├── engines/
-│   ├── recon.py             # Reconnaissance (DNS, HTTP, Shodan, VT)
-│   ├── ai_engine.py         # Claude AI integration
-│   └── report_engine.py     # Report assembly & export
-├── models/
-│   └── schemas.py           # Pydantic data models
-└── static/
-    └── index.html           # Frontend UI
-```
+Run only in a controlled, isolated environment on assets for which you have explicit permission. Do not deploy the current service on a public VPS or connect it to untrusted users. The presence of Docker or an API key does not make the service production-safe.
 
----
+## Historical credential notice
 
-## 🌐 API Endpoints
+A historical commit in this repository included a `.env` file. The maintainer reports that the credentials in it were revoked, and the current `main` tree does not contain that file. At the time this README was updated, GitHub still returned the historical commit by its SHA; complete server-side removal has not been verified. Do not reuse any credential found in historical data. If you cloned the repository before the history rewrite, discard that clone and make a fresh clone of the current `main` branch.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | System status + configured APIs |
-| `POST` | `/scan/start` | Start async scan |
-| `GET` | `/scan/{id}/status` | Poll progress (0-100%) |
-| `GET` | `/scan/{id}/result` | Full JSON results |
-| `GET` | `/scan/{id}/report` | Plain-text report for export |
-| `GET` | `/scans` | List all scans |
-| `GET` | `/docs` | Swagger UI |
+## Contributing
 
-### Example:
+Please avoid committing `.env`, provider tokens, scan outputs containing sensitive target data, or unredacted logs. Report security issues privately to the maintainer rather than publishing exploit details or credentials in an issue.
 
-```bash
-# Start scan
-curl -X POST http://localhost:8000/scan/start \
-  -H "Content-Type: application/json" \
-  -d '{"target": "https://example.com", "target_type": "web", "scope": ["XSS", "SQLi", "SSRF"]}'
+## License
 
-# Returns: {"scan_id": "A1B2C3D4", "status": "queued"}
-
-# Poll status
-curl http://localhost:8000/scan/A1B2C3D4/status
-
-# Get result
-curl http://localhost:8000/scan/A1B2C3D4/result
-```
-
----
-
-## 🐳 Deployment on VPS
-
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-
-# Clone & configure
-git clone https://github.com/YOUR_USERNAME/phantom.git
-cd phantom
-cp .env.example .env
-nano .env   # Add your API keys
-
-# Run
-docker-compose up -d
-
-# Check logs
-docker-compose logs -f
-```
-
----
-
-## ⚠️ Legal Notice
-
-PHANTOM is designed exclusively for:
-- Authorized bug bounty programs
-- Targets within defined scope
-- Responsible disclosure
-
-Never use against targets without explicit authorization.
-
----
-
-## 📜 License
-
-MIT License — see [LICENSE](LICENSE)
+See [LICENSE.txt](LICENSE.txt).
