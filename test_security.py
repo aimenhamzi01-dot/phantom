@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import ssl
 import socket
 from datetime import datetime, timedelta, timezone
 
@@ -122,6 +123,8 @@ def test_pinned_connection_uses_validated_ip_and_original_tls_name(monkeypatch):
             seen["closed"] = True
 
     class FakeTLSContext:
+        verify_mode = ssl.CERT_REQUIRED
+
         def wrap_socket(self, sock, server_hostname):
             seen["sni"] = server_hostname
             return sock
