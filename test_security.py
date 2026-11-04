@@ -1,6 +1,5 @@
 import hashlib
 import hmac
-import ssl
 import socket
 from datetime import datetime, timedelta, timezone
 
@@ -123,8 +122,6 @@ def test_pinned_connection_uses_validated_ip_and_original_tls_name(monkeypatch):
             seen["closed"] = True
 
     class FakeTLSContext:
-        verify_mode = ssl.CERT_REQUIRED
-
         def wrap_socket(self, sock, server_hostname):
             seen["sni"] = server_hostname
             return sock
@@ -133,9 +130,9 @@ def test_pinned_connection_uses_validated_ip_and_original_tls_name(monkeypatch):
         seen["connect"] = address
         return FakeSocket()
 
-    monkeypatch.setattr(pinned_http.socket, "create_connection", fake_create_connection)
-    monkeypatch.setattr(pinned_http.ssl, "create_default_context", lambda: FakeTLSContext())
     connection = pinned_http.PinnedHTTPSConnection("target.example", "93.184.216.34", timeout=2)
+    connection._context = FakeTLSContext()
+    monkeypatch.setattr(pinned_http.socket, "create_connection", fake_create_connection)
     connection.connect()
     assert seen["connect"] == ("93.184.216.34", 443)
     assert seen["sni"] == "target.example"
