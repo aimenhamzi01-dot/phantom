@@ -25,7 +25,7 @@ jobs:
         run: pip install -r requirements.txt pytest httpx
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: pytest -v --tb=short
         env:
           MODEL_API_KEY: test-meta-key
           META_API_BASE: https://api.meta.ai/v1

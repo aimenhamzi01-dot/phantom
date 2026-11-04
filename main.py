@@ -19,7 +19,7 @@ from models.schemas import ScanRequest, ScanResult, HealthResponse, TargetType
 from engines.recon import ReconEngine
 from engines.ai_engine import AIEngine
 from engines.report_engine import ReportEngine
-from security import require_api_token, validate_target, verify_manifest
+from security import require_api_token, resolve_target_ips, validate_target, verify_manifest
 
 # ─── LOGGING SETUP ───────────────────────────────────────────────────────────
 handler = colorlog.StreamHandler()
@@ -62,11 +62,11 @@ report_engine = ReportEngine()
 
 
 # ─── SCAN ORCHESTRATOR ───────────────────────────────────────────────────────
-async def run_scan(scan_id: str, request: ScanRequest):
+async def _run_scan_pipeline(scan_id: str, request: ScanRequest, pinned_ips: list[str]):
     """
     Full scan pipeline:
     1. Recon (real data gathering)
-    2. AI Analysis (Claude with full context)
+    2. AI Analysis (Meta Muse Spark with bounded collected context)
     3. Report Assembly
     """
     try:
@@ -78,7 +78,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
         logger.info(f"[{scan_id}] Starting recon for: {request.target}")
 
         # ── Phase 1: Reconnaissance ──────────────────────────
-        recon = await recon_engine.run(request.target, request.target_type.value)
+        recon = await recon_engine.run(request.target, request.target_type.value, pinned_ips)
 
         scan_store[scan_id]["phase"] = "ai_analysis"
         scan_store[scan_id]["message"] = "AI engine analyzing target..."
@@ -123,6 +123,19 @@ async def run_scan(scan_id: str, request: ScanRequest):
         scan_store[scan_id]["status"] = "error"
         scan_store[scan_id]["message"] = str(e)
         scan_store[scan_id]["progress"] = 0
+
+
+async def run_scan(scan_id: str, request: ScanRequest, pinned_ips: list[str]):
+    """Enforce the 20-minute maximum declared by every accepted signed manifest."""
+    try:
+        await asyncio.wait_for(_run_scan_pipeline(scan_id, request, pinned_ips), timeout=20 * 60)
+    except asyncio.TimeoutError:
+        logger.error("[%s] Scan exceeded the signed 20-minute maximum duration", scan_id)
+        if scan_id in scan_store:
+            scan_store[scan_id]["status"] = "error"
+            scan_store[scan_id]["phase"] = "error"
+            scan_store[scan_id]["message"] = "Scan exceeded the maximum permitted duration (20 minutes)."
+            scan_store[scan_id]["progress"] = 0
 
 
 # ─── ROUTES ──────────────────────────────────────────────────────────────────
@@ -174,6 +187,11 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks, x_
         except ValueError as e:
             raise HTTPException(status_code=403, detail=str(e))
 
+    try:
+        pinned_ips = resolve_target_ips(request.target or "", request.target_type.value)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
     # Validate API key on first request
     try:
         config.validate()
@@ -194,7 +212,7 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks, x_
         "started_at": datetime.utcnow().isoformat(),
     }
 
-    background_tasks.add_task(run_scan, scan_id, request)
+    background_tasks.add_task(run_scan, scan_id, request, pinned_ips)
 
     logger.info(f"Scan {scan_id} started for: {request.target}")
     return {"scan_id": scan_id, "status": "queued"}
@@ -241,8 +259,12 @@ async def get_scan_result(scan_id: str, x_phantom_api_token: Optional[str] = Hea
 
 
 @app.get("/scan/{scan_id}/report", response_class=PlainTextResponse)
-async def get_text_report(scan_id: str):
+async def get_text_report(scan_id: str, x_phantom_api_token: Optional[str] = Header(default=None)):
     """Get plain-text report for export"""
+    try:
+        require_api_token(x_phantom_api_token)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     if scan_id not in scan_store:
         raise HTTPException(status_code=404, detail="Scan not found")
 
@@ -255,16 +277,24 @@ async def get_text_report(scan_id: str):
 
 
 @app.delete("/scan/{scan_id}")
-async def delete_scan(scan_id: str):
+async def delete_scan(scan_id: str, x_phantom_api_token: Optional[str] = Header(default=None)):
     """Clean up scan data"""
+    try:
+        require_api_token(x_phantom_api_token)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     if scan_id in scan_store:
         del scan_store[scan_id]
     return {"deleted": scan_id}
 
 
 @app.get("/scans")
-async def list_scans():
+async def list_scans(x_phantom_api_token: Optional[str] = Header(default=None)):
     """List all scans (without full results)"""
+    try:
+        require_api_token(x_phantom_api_token)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     return [
         {
             "scan_id": k,

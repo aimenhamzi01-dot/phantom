@@ -9,13 +9,13 @@ Phantom is a secondary worker inside **Mizan**, the main project submitted to th
 ## What is implemented
 
 - **Signed Mizan handoff:** accepts a task only when its HMAC-SHA256 manifest, expiry, scope, execution policy, and target allowlist all verify.
-- **Bounded evidence collection:** uses HTTPS-only requests with TLS verification, no redirects, public-target checks, selected DNS/certificate metadata, and a 2 MB source limit.
+- **Bounded evidence collection:** uses HTTPS-only requests pinned to validated public IPs, TLS hostname verification, no redirects, selected DNS/certificate metadata, and a streaming 2 MB source limit.
 - **Code evidence:** optionally fetches an authorized source URL and runs a language-appropriate Semgrep ruleset. This is remote source retrieval, not local-file upload or code execution.
 - **Meta-only analysis:** `AIEngine` calls Meta Model API with Muse Spark (`muse-spark-1.3` and configured Muse Spark fallbacks). Output is generated analysis, never independent verification.
 - **Safe handback:** returns findings as untrusted evidence for Mizan's import, source matching, human review, and final disposition.
 - **In-memory job tracking:** scan state and results are held in process memory and are lost on restart. This is suitable only for local experimentation.
 
-Phantom does not execute proof-of-concept code, exploit a target, apply remediation, estimate a bounty, or recommend a program. Mizan is the orchestrator and final decision plane; Phantom findings are imported as untrusted evidence. A signed scope is enforced before execution and is also sent to the model as context.
+Phantom does not execute proof-of-concept code, exploit a target, apply remediation, estimate a bounty, or recommend a program. Mizan is the orchestrator and final decision plane; Phantom findings are imported as untrusted evidence. The signed scope is checked against supported labels and passed to the model as context; it does not currently select a separate active test for each vulnerability category.
 
 ## Role in the Meta hackathon project
 
@@ -69,9 +69,9 @@ The example environment binds the Python server to loopback. Start it from the p
 python main.py
 ```
 
-Check `http://127.0.0.1:8000/health` and open the FastAPI schema at `http://127.0.0.1:8000/docs`. The repository currently provides an API; it does not include a bundled web frontend.
+Check `http://127.0.0.1:8000/health` and open the FastAPI schema at `http://127.0.0.1:8000/docs`. The repository currently provides an API; it does not include a bundled web frontend. The in-memory job store requires a single application worker; the Docker image is configured accordingly.
 
-The Docker files bind to loopback for the local demo. Do not expose Phantom directly to the internet.
+Compose publishes the service on host loopback for the local demo. The application listens on the container interface, so do not run the container on an untrusted network or expose Phantom directly to the internet.
 
 ## API overview
 
@@ -96,14 +96,20 @@ Secure request shape: Phantom receives the signed manifest created by Mizan, not
     "target": "https://authorized.example.com",
     "target_type": "web",
     "scope": ["xss", "sqli"],
-    "execution": {"mode": "manual-handoff-only", "automatic_execution": false},
+    "execution": {
+      "mode": "manual-handoff-only",
+      "automatic_execution": false,
+      "network_access_by_mizan": false,
+      "max_duration_minutes": 20,
+      "result_format": "phantom-scan-result-v1"
+    },
     "signature_algorithm": "HMAC-SHA256",
     "signature": "issued-by-mizan"
   }
 }
 ```
 
-Submit it to `POST /scan/start` with `X-Phantom-API-Token`. The API returns a scan ID that can be used with the authenticated status and result routes. The service performs network activity when a web or code scan is started; use only a target you own or are explicitly authorized to assess.
+Submit it to `POST /scan/start` with `X-Phantom-API-Token`. All scan listing, status, report, result, and delete routes require the same service token. The API returns a scan ID for follow-up. The service performs network activity when a web or code scan is started; use only a target you own or are explicitly authorized to assess.
 
 Supported `target_type` values are `web`, `code`, `mobile`, and `hardware`. The competition demo focuses on `web` and the limited remote-source `code` path. Mobile and hardware are accepted as bounded metadata types but are not presented as implemented analyzers.
 
@@ -111,9 +117,9 @@ Supported `target_type` values are `web`, `code`, `mobile`, and `hardware`. The 
 
 The current implementation is not suitable for multi-user or internet-facing deployment:
 
-- Scan start, status, and result endpoints require `X-Phantom-API-Token`; the start endpoint also requires a valid signed Mizan manifest.
-- The manifest scope and target allowlist are enforced, but do not replace human authorization.
-- Web and code targets can cause outbound requests. Targets must be HTTPS, redirects are disabled, TLS is verified, and private/reserved destinations are rejected.
+- All scan listing, start, status, report, result, and delete endpoints require `X-Phantom-API-Token`; the start endpoint also requires a valid signed Mizan manifest.
+- The manifest scope labels and target allowlist are validated, but do not replace human authorization or imply that an active check exists for each category.
+- Web and code targets can cause outbound requests. Targets must be HTTPS, redirects are disabled, TLS is verified against the original hostname, connections are pinned to validated public IPs, and non-global destinations are rejected.
 - CORS configuration is permissive and is not an access-control mechanism.
 - There are no durable storage, per-user isolation, rate limits, quotas, or robust concurrency controls.
 - The AI report can contain fabricated or overstated claims. Treat all findings and model-provided values as unverified until checked independently.
