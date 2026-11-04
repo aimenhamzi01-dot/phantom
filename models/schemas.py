@@ -1,5 +1,5 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional, List
+from pydantic import BaseModel, field_validator, model_validator
+from typing import Any, Optional, List
 from enum import Enum
 
 class TargetType(str, Enum):
@@ -9,17 +9,26 @@ class TargetType(str, Enum):
     code = "code"
 
 class ScanRequest(BaseModel):
-    target: str
+    target: Optional[str] = None
     target_type: TargetType = TargetType.web
-    scope: List[str] = ["XSS","SQLi","SSRF","IDOR","Logic","Auth","RCE","Crypto"]
+    scope: List[str] = []
+    manifest: Optional[dict[str, Any]] = None
 
     @field_validator("target")
     @classmethod
     def validate_target(cls, v):
+        if v is None:
+            return v
         v = v.strip()
         if not v: raise ValueError("Target cannot be empty")
         if len(v) > 512: raise ValueError("Target too long")
         return v
+
+    @model_validator(mode="after")
+    def require_manifest_or_target(self):
+        if self.manifest is None and not self.target:
+            raise ValueError("A signed manifest is required in secure mode.")
+        return self
 
 class ReconResult(BaseModel):
     domain: Optional[str] = None

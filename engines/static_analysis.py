@@ -19,13 +19,16 @@ SEMGREP_CONFIGS = {
 
 class StaticAnalysisEngine:
     def __init__(self):
-        self.http = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+        self.http = httpx.AsyncClient(timeout=30.0, follow_redirects=False, verify=True)
 
     async def fetch_source(self, url: str):
         try:
             r = await self.http.get(url)
             if r.status_code != 200:
                 logger.warning(f"Source fetch failed: HTTP {r.status_code} for {url}")
+                return None
+            if len(r.content) > 2 * 1024 * 1024:
+                logger.warning("Source fetch rejected: response exceeds 2MB")
                 return None
             text = r.text
             if "?format=TEXT" in url:

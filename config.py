@@ -14,11 +14,20 @@ class Config:
     AI_MAX_TOKENS: int = 4096
     HTTP_TIMEOUT: int = 15
     AI_TIMEOUT: int = 60
+    GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
+    PHANTOM_API_TOKEN: str = os.getenv("PHANTOM_API_TOKEN", "")
+    MIZAN_PHANTOM_SIGNING_KEY: str = os.getenv("MIZAN_PHANTOM_SIGNING_KEY", "")
+    ALLOW_DIRECT_SCANS: bool = os.getenv("PHANTOM_ALLOW_DIRECT_SCANS", "false").lower() == "true"
+    MAX_SOURCE_BYTES: int = 2 * 1024 * 1024
 
     @classmethod
     def validate(cls):
-        if not cls.ANTHROPIC_API_KEY or cls.ANTHROPIC_API_KEY == "sk-ant-your-key-here":
-            raise ValueError("ANTHROPIC_API_KEY is required in .env file")
+        if not cls.GITHUB_TOKEN:
+            raise ValueError("GITHUB_TOKEN is required in .env file")
+        if not cls.PHANTOM_API_TOKEN:
+            raise ValueError("PHANTOM_API_TOKEN is required in .env file")
+        if len(cls.MIZAN_PHANTOM_SIGNING_KEY) < 32:
+            raise ValueError("MIZAN_PHANTOM_SIGNING_KEY must be at least 32 characters")
         return True
 
 config = Config()

@@ -9,15 +9,16 @@ from datetime import datetime
 from typing import Optional
 
 import colorlog
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
 from config import config
-from models.schemas import ScanRequest, ScanResult, HealthResponse
+from models.schemas import ScanRequest, ScanResult, HealthResponse, TargetType
 from engines.recon import ReconEngine
 from engines.ai_engine import AIEngine
 from engines.report_engine import ReportEngine
+from security import require_api_token, validate_target, verify_manifest
 
 # ─── LOGGING SETUP ───────────────────────────────────────────────────────────
 handler = colorlog.StreamHandler()
@@ -47,7 +48,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.ALLOWED_ORIGINS + ["*"],  # Tighten in production
+    allow_origins=config.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -147,11 +148,32 @@ async def health():
 
 
 @app.post("/scan/start")
-async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
+async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks, x_phantom_api_token: Optional[str] = Header(default=None)):
     """
     Start a new async scan.
     Returns scan_id immediately — poll /scan/{id}/status for progress.
     """
+    try:
+        require_api_token(x_phantom_api_token)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    if request.manifest is not None:
+        try:
+            target, target_type, scope = verify_manifest(request.manifest)
+        except ValueError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        request.target = target
+        request.target_type = TargetType(target_type)
+        request.scope = scope
+    elif not config.ALLOW_DIRECT_SCANS:
+        raise HTTPException(status_code=403, detail="Direct scans are disabled; submit a signed Mizan manifest.")
+    else:
+        try:
+            request.target = validate_target(request.target or "", request.target_type.value)
+        except ValueError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
     # Validate API key on first request
     try:
         config.validate()
@@ -179,8 +201,12 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
 
 
 @app.get("/scan/{scan_id}/status")
-async def get_scan_status(scan_id: str):
+async def get_scan_status(scan_id: str, x_phantom_api_token: Optional[str] = Header(default=None)):
     """Poll scan progress"""
+    try:
+        require_api_token(x_phantom_api_token)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     if scan_id not in scan_store:
         raise HTTPException(status_code=404, detail="Scan not found")
 
@@ -195,8 +221,12 @@ async def get_scan_status(scan_id: str):
 
 
 @app.get("/scan/{scan_id}/result")
-async def get_scan_result(scan_id: str):
+async def get_scan_result(scan_id: str, x_phantom_api_token: Optional[str] = Header(default=None)):
     """Get full scan result when complete"""
+    try:
+        require_api_token(x_phantom_api_token)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
     if scan_id not in scan_store:
         raise HTTPException(status_code=404, detail="Scan not found")
 

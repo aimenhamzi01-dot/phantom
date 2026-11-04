@@ -8,7 +8,7 @@ logger = logging.getLogger("phantom.recon")
 
 class ReconEngine:
     def __init__(self):
-        self.http = httpx.AsyncClient(timeout=config.HTTP_TIMEOUT, follow_redirects=True, verify=False, headers={"User-Agent": "Mozilla/5.0 (Security-Researcher/PHANTOM)"})
+        self.http = httpx.AsyncClient(timeout=config.HTTP_TIMEOUT, follow_redirects=False, verify=True, headers={"User-Agent": "PHANTOM/secure-authorized-scan"})
         self.static_engine = StaticAnalysisEngine()
 
     async def run(self, target: str, target_type: str) -> ReconResult:

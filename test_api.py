@@ -31,7 +31,7 @@ def test_health():
 
 
 def test_scan_not_found():
-    response = client.get("/scan/NOTEXIST/status")
+    response = client.get("/scan/NOTEXIST/status", headers={"X-Phantom-API-Token": "test-phantom-token"})
     assert response.status_code == 404
 
 
@@ -48,11 +48,10 @@ def test_scan_request_validation():
 
 
 def test_scan_request_valid_structure():
-    # Valid structure (will fail at API key validation, not schema)
+    # Direct scans are rejected in secure mode even when the schema is valid.
     response = client.post("/scan/start", json={
         "target": "https://example.com",
         "target_type": "web",
         "scope": ["XSS", "SQLi"]
-    })
-    # Either queued or error about API key — both are valid test outcomes
-    assert response.status_code in [200, 500]
+    }, headers={"X-Phantom-API-Token": "test-phantom-token"})
+    assert response.status_code == 403
