@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Metadata
-LABEL name="phantom" version="1.0.0" description="AI Bug Bounty Hunter"
+LABEL name="phantom" version="1.0.0" description="Mizan Meta evidence worker"
 
 # Set working directory
 WORKDIR /app

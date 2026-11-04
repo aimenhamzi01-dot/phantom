@@ -1,12 +1,15 @@
-from pydantic import BaseModel, field_validator, model_validator
-from typing import Any, Optional, List
 from enum import Enum
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, field_validator, model_validator
+
 
 class TargetType(str, Enum):
     web = "web"
     mobile = "mobile"
     hardware = "hardware"
     code = "code"
+
 
 class ScanRequest(BaseModel):
     target: Optional[str] = None
@@ -16,19 +19,22 @@ class ScanRequest(BaseModel):
 
     @field_validator("target")
     @classmethod
-    def validate_target(cls, v):
-        if v is None:
-            return v
-        v = v.strip()
-        if not v: raise ValueError("Target cannot be empty")
-        if len(v) > 512: raise ValueError("Target too long")
-        return v
+    def validate_target(cls, value):
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("Target cannot be empty")
+        if len(value) > 512:
+            raise ValueError("Target too long")
+        return value
 
     @model_validator(mode="after")
     def require_manifest_or_target(self):
         if self.manifest is None and not self.target:
             raise ValueError("A signed manifest is required in secure mode.")
         return self
+
 
 class ReconResult(BaseModel):
     domain: Optional[str] = None
@@ -37,9 +43,6 @@ class ReconResult(BaseModel):
     technologies: List[str] = []
     open_ports: List[int] = []
     dns_records: dict = {}
-    whois_info: dict = {}
-    shodan_info: dict = {}
-    virustotal_info: dict = {}
     headers: dict = {}
     subdomains: List[str] = []
     endpoints: List[str] = []
@@ -48,6 +51,7 @@ class ReconResult(BaseModel):
     source_fetched: bool = False
     lines_of_code: int = 0
     static_findings: List[dict] = []
+
 
 class Vulnerability(BaseModel):
     id: str
@@ -65,18 +69,6 @@ class Vulnerability(BaseModel):
     source_line: Optional[int] = None
     source_snippet: Optional[str] = None
 
-class BountyEstimate(BaseModel):
-    low: int
-    high: int
-    most_likely: int
-    currency: str = "USD"
-
-class RecommendedProgram(BaseModel):
-    name: str
-    platform: str
-    reward_range: str
-    match_score: int
-    url: Optional[str] = None
 
 class ScanResult(BaseModel):
     target: str
@@ -91,10 +83,8 @@ class ScanResult(BaseModel):
     technical_details: str = ""
     proof_of_concept: str = ""
     remediation: str = ""
-    submission_guide: str = ""
-    estimated_bounty: BountyEstimate = BountyEstimate(low=0,high=0,most_likely=0)
-    recommended_programs: List[RecommendedProgram] = []
     risk_rating: str = "Unknown"
+
 
 class HealthResponse(BaseModel):
     status: str

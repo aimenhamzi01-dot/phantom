@@ -1,20 +1,43 @@
-# PHANTOM
+# Phantom
 
-**A bounded Meta Muse Spark evidence-analysis worker for Mizan.**
+**Mizan's signed, bounded evidence worker—powered exclusively by Meta Muse Spark.**
 
-PHANTOM is a secondary worker inside the Mizan security-review system. It combines limited reconnaissance, optional source retrieval and Semgrep checks, and a Meta Muse Spark report. It is not an independent scanner, bounty oracle, or production service. Findings, severity, CVSS values, remediation, and bounty estimates require independent human review in Mizan.
+Phantom is a secondary worker inside **Mizan**, the main project submitted to the Meta Global AI Developer Hackathon. It performs a narrow, authorized collection pass, runs optional Semgrep checks for code targets, and asks Meta Muse Spark to organize the resulting evidence. It is not an independent product, final validator, bounty oracle, or decision-maker.
 
 > **Security status:** Phantom accepts signed Mizan manifests only by default. It also requires a service token, an explicit target allowlist, HTTPS, TLS verification, no redirects, and rejects private/reserved destinations. Keep it private and use it only for targets you are authorized to assess.
 
 ## What is implemented
 
-- **Web target reconnaissance:** makes an HTTP request, follows redirects, collects selected DNS records and certificate details, and checks a short list of common subdomains. Optional Shodan and VirusTotal lookups are available when their keys are configured.
-- **Code target analysis:** fetches source from a URL and, if the Semgrep CLI is installed, runs a language-appropriate Semgrep ruleset. This is remote source retrieval, not an upload workflow for local files. Semgrep rules may require network access.
-- **AI-assisted reporting:** `AIEngine` calls Meta Model API with Muse Spark (`muse-spark-1.3` with configured Muse Spark fallbacks). Its output is generated text and may be incorrect; it is not independent verification.
-- **Mobile and hardware target types:** accepted by the API, but currently return placeholder metadata. The repository does not implement APK/IPA or firmware/binary analysis.
+- **Signed Mizan handoff:** accepts a task only when its HMAC-SHA256 manifest, expiry, scope, execution policy, and target allowlist all verify.
+- **Bounded evidence collection:** uses HTTPS-only requests with TLS verification, no redirects, public-target checks, selected DNS/certificate metadata, and a 2 MB source limit.
+- **Code evidence:** optionally fetches an authorized source URL and runs a language-appropriate Semgrep ruleset. This is remote source retrieval, not local-file upload or code execution.
+- **Meta-only analysis:** `AIEngine` calls Meta Model API with Muse Spark (`muse-spark-1.3` and configured Muse Spark fallbacks). Output is generated analysis, never independent verification.
+- **Safe handback:** returns findings as untrusted evidence for Mizan's import, source matching, human review, and final disposition.
 - **In-memory job tracking:** scan state and results are held in process memory and are lost on restart. This is suitable only for local experimentation.
 
-PHANTOM does not execute proof-of-concept code or apply remediation. Mizan is the orchestrator and final decision plane; Phantom findings are imported as untrusted evidence. A signed scope is enforced before execution and is also sent to the model as context.
+Phantom does not execute proof-of-concept code, exploit a target, apply remediation, estimate a bounty, or recommend a program. Mizan is the orchestrator and final decision plane; Phantom findings are imported as untrusted evidence. A signed scope is enforced before execution and is also sent to the model as context.
+
+## Role in the Meta hackathon project
+
+Mizan is the product. Phantom exists to demonstrate a controlled extension point for the same evidence-led workflow:
+
+```text
+Mizan creates signed task
+          ↓
+Phantom verifies and collects bounded evidence
+          ↓
+Meta Muse Spark organizes the evidence
+          ↓
+Mizan imports it as untrusted data
+          ↓
+Human reviewer decides
+```
+
+This separation is intentional. It shows how an AI security workflow can gain useful tool-assisted evidence without turning a scanner into an autonomous actor. The judge-facing demo should open in Mizan; Phantom is a short supporting scene, not a second product pitch.
+
+### Suggested Phantom scene in the 3-minute demo
+
+Spend no more than 20–30 seconds on Phantom: show Mizan issuing a signed task, show Phantom rejecting an unsigned arbitrary-target request, then show the accepted result returning to Mizan as an explicitly unverified import. Return immediately to Mizan's evidence matching and human disposition panel.
 
 ## Requirements and current setup caveats
 
@@ -35,11 +58,10 @@ cd phantom
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install openai
 cp .env.example .env
 ```
 
-Edit `.env` locally. Set the Meta key and the shared Mizan signing key, then configure the Phantom service token and exact authorized target allowlist. Add Shodan or VirusTotal keys only if you need those integrations. Do not paste real credentials into issues, pull requests, or public logs.
+Edit `.env` locally. Set the Meta key and the same signing key used by Mizan, then configure the Phantom service token and exact authorized target allowlist. Do not paste real credentials into issues, pull requests, or public logs.
 
 The example environment binds the Python server to loopback. Start it from the project directory:
 
@@ -49,7 +71,7 @@ python main.py
 
 Check `http://127.0.0.1:8000/health` and open the FastAPI schema at `http://127.0.0.1:8000/docs`. The repository currently provides an API; it does not include a bundled web frontend.
 
-The Docker files are provided for experimentation, not secure public deployment. In particular, the current Compose port mapping and container host setting can expose the service beyond loopback.
+The Docker files bind to loopback for the local demo. Do not expose Phantom directly to the internet.
 
 ## API overview
 
@@ -81,9 +103,9 @@ Secure request shape: Phantom receives the signed manifest created by Mizan, not
 }
 ```
 
-Submit it to `POST /scan/start` as JSON. The API returns a scan ID that can be used with the status and result routes. The service performs network activity when a web or code scan is started; do not test the example placeholder as a real target.
+Submit it to `POST /scan/start` with `X-Phantom-API-Token`. The API returns a scan ID that can be used with the authenticated status and result routes. The service performs network activity when a web or code scan is started; use only a target you own or are explicitly authorized to assess.
 
-Supported `target_type` values are `web`, `code`, `mobile`, and `hardware`. Only `web` and the limited remote-source `code` path currently perform the corresponding collection described above; `mobile` and `hardware` remain placeholders.
+Supported `target_type` values are `web`, `code`, `mobile`, and `hardware`. The competition demo focuses on `web` and the limited remote-source `code` path. Mobile and hardware are accepted as bounded metadata types but are not presented as implemented analyzers.
 
 ## Security limitations
 

@@ -40,8 +40,8 @@ scan_store: dict[str, dict] = {}
 
 # ─── APP INIT ────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="PHANTOM — AI Bug Bounty Hunter",
-    description="Elite AI-powered security analysis engine for authorized bug bounty hunting",
+    title="Phantom — Mizan Evidence Worker",
+    description="Bounded Meta Muse Spark evidence collection and analysis worker for Mizan",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -115,8 +115,7 @@ async def run_scan(scan_id: str, request: ScanRequest):
 
         logger.info(
             f"[{scan_id}] Scan complete: {len(result.vulnerabilities)} vulns | "
-            f"Risk: {result.risk_rating} | "
-            f"Bounty: ${result.estimated_bounty.most_likely:,}"
+            f"Risk: {result.risk_rating}"
         )
 
     except Exception as e:
@@ -144,8 +143,6 @@ async def health():
             "meta_model_api": bool(
                 os.getenv("MODEL_API_KEY") or os.getenv("META_API_KEY") or os.getenv("META_MODEL_API_KEY")
             ),
-            "shodan": bool(config.SHODAN_API_KEY),
-            "virustotal": bool(config.VIRUSTOTAL_API_KEY),
         }
     )
 
@@ -284,7 +281,7 @@ async def list_scans():
 @app.on_event("startup")
 async def startup():
     logger.info("=" * 50)
-    logger.info("PHANTOM AI Bug Bounty Hunter — ONLINE")
+    logger.info("Phantom — Mizan Meta Evidence Worker — ONLINE")
     logger.info(f"AI Model: {config.AI_MODEL} (Meta Model API)")
     logger.info(f"Shodan: {'✓' if config.SHODAN_API_KEY else '✗ (optional)'}")
     logger.info(f"VirusTotal: {'✓' if config.VIRUSTOTAL_API_KEY else '✗ (optional)'}")

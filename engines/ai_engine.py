@@ -16,7 +16,7 @@ Respond ONLY with valid JSON and no markdown. Preserve the distinction between s
 analysis. The human reviewer in Mizan makes the final decision.
 
 JSON Schema:
-{"tech_stack":["technologies"],"risk_rating":"CRITICAL|HIGH|MEDIUM|LOW|INFO","vulnerabilities":[{"id":"VULN-001","title":"name","severity":"critical|high|medium|low","cvss_score":0.0,"cvss_vector":"CVSS:3.1/...","description":"grounded technical description","endpoint":"file:line","impact":"business impact","attack_vector":"attack steps","cwe":"CWE-XXX","cve_refs":[],"verified":false,"source_line":0,"source_snippet":"actual snippet"}],"cvss_breakdown":{},"executive_summary":"professional summary","technical_details":"analysis grounded in evidence","proof_of_concept":"non-executing reproduction outline","remediation":"fix recommendations","submission_guide":"review guidance","estimated_bounty":{"low":0,"high":0,"most_likely":0,"currency":"USD"},"recommended_programs":[]}"""
+{"tech_stack":["technologies"],"risk_rating":"CRITICAL|HIGH|MEDIUM|LOW|INFO","vulnerabilities":[{"id":"VULN-001","title":"name","severity":"critical|high|medium|low","cvss_score":0.0,"cvss_vector":"CVSS:3.1/...","description":"grounded technical description","endpoint":"file:line","impact":"business impact","attack_vector":"attack steps","cwe":"CWE-XXX","cve_refs":[],"verified":false,"source_line":0,"source_snippet":"actual snippet"}],"cvss_breakdown":{},"executive_summary":"professional summary","technical_details":"analysis grounded in evidence","proof_of_concept":"non-executing reproduction outline","remediation":"fix recommendations"}"""
 
 
 def build_prompt(target, target_type, scope, recon):
@@ -51,9 +51,6 @@ SSL: {json.dumps(recon.ssl_info)}
 DNS: {json.dumps(recon.dns_records)}
 SUBDOMAINS: {', '.join(recon.subdomains) if recon.subdomains else 'None'}
 OPEN PORTS: {recon.open_ports}
-SHODAN: {json.dumps(recon.shodan_info)}
-VIRUSTOTAL: {json.dumps(recon.virustotal_info)}
-
 {static_section}
 
 Remember: do not report any vulnerability that is not directly grounded in the data above."""
