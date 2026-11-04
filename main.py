@@ -4,6 +4,7 @@ Main entry point — orchestrates all engines
 """
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -140,7 +141,9 @@ async def health():
         version="1.0.0",
         ai_engine=config.AI_MODEL,
         apis_configured={
-            "anthropic": bool(config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "sk-ant-your-key-here"),
+            "meta_model_api": bool(
+                os.getenv("MODEL_API_KEY") or os.getenv("META_API_KEY") or os.getenv("META_MODEL_API_KEY")
+            ),
             "shodan": bool(config.SHODAN_API_KEY),
             "virustotal": bool(config.VIRUSTOTAL_API_KEY),
         }
@@ -282,7 +285,7 @@ async def list_scans():
 async def startup():
     logger.info("=" * 50)
     logger.info("PHANTOM AI Bug Bounty Hunter — ONLINE")
-    logger.info(f"AI Model: {config.AI_MODEL}")
+    logger.info(f"AI Model: {config.AI_MODEL} (Meta Model API)")
     logger.info(f"Shodan: {'✓' if config.SHODAN_API_KEY else '✗ (optional)'}")
     logger.info(f"VirusTotal: {'✓' if config.VIRUSTOTAL_API_KEY else '✗ (optional)'}")
     logger.info(f"Docs: http://{config.HOST}:{config.PORT}/docs")

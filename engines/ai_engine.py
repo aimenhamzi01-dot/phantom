@@ -1,26 +1,23 @@
-import json, logging
-from openai import OpenAI
-from config import config
-from models.schemas import ReconResult
-import os
+import json
+import logging
+
+from meta_client import MetaAPIError, chat
+
 logger = logging.getLogger("phantom.ai")
 
-SYSTEM_PROMPT = """You are PHANTOM's AI core — a triage and reporting layer for authorized bug bounty hunting.
+SYSTEM_PROMPT = """You are PHANTOM's evidence-analysis worker inside Mizan.
 
 CRITICAL RULE: You do NOT invent vulnerabilities. You only triage, explain, and write up findings that
-were ALREADY DETECTED by a real static-analysis tool (Semgrep) and are provided to you verbatim below.
-If the STATIC_FINDINGS list is empty, you MUST return an empty "vulnerabilities" array — do not guess,
-do not speculate, do not produce generic "may contain" findings about a file you have not actually seen.
+were ALREADY DETECTED by a real static-analysis tool (Semgrep) and are provided below.
+If STATIC_FINDINGS is empty, return an empty vulnerabilities array. Do not speculate or produce generic
+findings about code you have not actually seen.
 
-For each real finding given to you, you may:
-- Explain its real-world impact and attack vector in professional language
-- Assign an accurate CVSS score based on the actual rule/CWE/code snippet provided
-- Suggest realistic remediation
-- Mark "verified": true since it is backed by a real tool, not a guess
+Respond ONLY with valid JSON and no markdown. Preserve the distinction between scanner evidence and your
+analysis. The human reviewer in Mizan makes the final decision.
 
-Respond ONLY with valid JSON. No markdown. No text outside JSON.
 JSON Schema:
-{"tech_stack":["technologies"],"risk_rating":"CRITICAL|HIGH|MEDIUM|LOW|INFO","vulnerabilities":[{"id":"VULN-001","title":"name","severity":"critical|high|medium|low","cvss_score":0.0,"cvss_vector":"CVSS:3.1/...","description":"technical description grounded in the actual code shown","endpoint":"file:line","impact":"business impact","attack_vector":"attack steps","cwe":"CWE-XXX","cve_refs":[],"verified":true,"source_line":0,"source_snippet":"the actual snippet"}],"cvss_breakdown":{"Attack Vector":0,"Complexity":0,"Privileges":0,"User Interaction":0,"Confidentiality":0,"Integrity":0},"executive_summary":"professional summary","technical_details":"deep analysis referencing real line numbers","proof_of_concept":"reproduction steps specific to the actual snippet","remediation":"fix recommendations","submission_guide":"programs and strategy","estimated_bounty":{"low":0,"high":0,"most_likely":0,"currency":"USD"},"recommended_programs":[{"name":"program","platform":"HackerOne|Bugcrowd|Direct","reward_range":"$X-$Y","match_score":0,"url":"https://..."}]}"""
+{"tech_stack":["technologies"],"risk_rating":"CRITICAL|HIGH|MEDIUM|LOW|INFO","vulnerabilities":[{"id":"VULN-001","title":"name","severity":"critical|high|medium|low","cvss_score":0.0,"cvss_vector":"CVSS:3.1/...","description":"grounded technical description","endpoint":"file:line","impact":"business impact","attack_vector":"attack steps","cwe":"CWE-XXX","cve_refs":[],"verified":false,"source_line":0,"source_snippet":"actual snippet"}],"cvss_breakdown":{},"executive_summary":"professional summary","technical_details":"analysis grounded in evidence","proof_of_concept":"non-executing reproduction outline","remediation":"fix recommendations","submission_guide":"review guidance","estimated_bounty":{"low":0,"high":0,"most_likely":0,"currency":"USD"},"recommended_programs":[]}"""
+
 
 def build_prompt(target, target_type, scope, recon):
     static_section = "N/A (not a code target)"
@@ -28,8 +25,7 @@ def build_prompt(target, target_type, scope, recon):
         if not recon.static_findings:
             static_section = (
                 f"Source fetched: {recon.source_fetched} | Lines of code: {recon.lines_of_code}\n"
-                f"STATIC_FINDINGS: [] (Semgrep found ZERO issues — report zero vulnerabilities. "
-                f"Do not invent any.)"
+                "STATIC_FINDINGS: [] (Semgrep found ZERO issues — report zero vulnerabilities.)"
             )
         else:
             findings_text = "\n".join(
@@ -42,7 +38,7 @@ def build_prompt(target, target_type, scope, recon):
                 f"STATIC_FINDINGS ({len(recon.static_findings)} real Semgrep results):\n{findings_text}"
             )
 
-    return f"""Analyze this bug bounty target using ONLY the real data below:
+    return f"""Analyze this authorized assessment using ONLY the evidence below:
 TARGET: {target}
 TYPE: {target_type.upper()}
 SCOPE: {', '.join(scope)}
@@ -62,36 +58,30 @@ VIRUSTOTAL: {json.dumps(recon.virustotal_info)}
 
 Remember: do not report any vulnerability that is not directly grounded in the data above."""
 
-class AIEngine:
-    def __init__(self):
-        self.client = OpenAI(
-            base_url="https://models.inference.ai.azure.com",
-            api_key=os.getenv("GITHUB_TOKEN"),
-        )
 
+class AIEngine:
     async def analyze(self, target, target_type, scope, recon):
         prompt = build_prompt(target, target_type, scope, recon)
-        logger.info(f"Sending to GitHub Models...")
+        logger.info("Sending evidence to Meta Muse Spark...")
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
+            raw = chat(
+                [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
-                max_tokens=4000,
-                temperature=0.1,
-            )
-            raw = response.choices[0].message.content.strip()
+                max_completion_tokens=3000,
+                temperature=None,
+                timeout=120,
+            ).strip()
             if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"): raw = raw[4:]
-            raw = raw.strip()
-            result = json.loads(raw)
-            logger.info(f"AI done: {len(result.get('vulnerabilities',[]))} findings")
+                raw = raw.split("```", 2)[1]
+                if raw.lstrip().startswith("json"):
+                    raw = raw.lstrip()[4:]
+            result = json.loads(raw.strip())
+            logger.info("Meta analysis done: %d findings", len(result.get("vulnerabilities", [])))
             return result
-        except json.JSONDecodeError as e:
-            raise ValueError(f"AI returned invalid JSON: {e}")
-        except Exception as e:
-            logger.error(f"AI error: {e}")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Meta API returned invalid JSON: {exc}") from exc
+        except MetaAPIError:
+            logger.exception("Meta API error")
             raise

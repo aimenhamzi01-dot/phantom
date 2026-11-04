@@ -8,7 +8,10 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Mock env before importing app
-os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-placeholder")
+os.environ.setdefault("MODEL_API_KEY", "test-meta-key")
+os.environ.setdefault("PHANTOM_API_TOKEN", "test-phantom-token")
+os.environ.setdefault("MIZAN_PHANTOM_SIGNING_KEY", "test-signing-key-that-is-at-least-32-chars")
+os.environ.setdefault("PHANTOM_ALLOWED_TARGETS", "https://example.com")
 
 from main import app
 
